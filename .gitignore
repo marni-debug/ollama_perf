@@ -34,3 +34,4 @@ generations.csv
 *.log
 .env
 .env.*
+results/
