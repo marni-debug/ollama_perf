@@ -2,6 +2,8 @@
 
 Personal tools around local Ollama models.
 
+Deutsche Kurzanleitung mit Beispielen: [ANLEITUNG.md](ANLEITUNG.md).
+
 ## LLM Coding-Agent Fitness Test
 
 Checks how well a local model behaves as an autonomous coding agent (Cline-style), not as a generic HumanEval clone.
