@@ -160,16 +160,36 @@ Ungültiges JSON, fehlendes `model` oder fehlendes `dimensions`-Objekt: Meldung 
 
 ## 4. A/B-Experiment
 
-Vergleicht **denselben** Holdout unter zwei System-Prompts. Einziger Unterschied: Baseline vs. bereits kompilierter Prompt. Der Runner kompiliert **nicht** selbst.
+Vergleicht **denselben** Holdout unter zwei System-Prompts bei **kontrollierten A/B-Bedingungen**. Die Experimentdefinition ist deterministisch (Datei-Hashes, Task-Paarung, Knöpfe). Der LLM-Lauf selbst ist **nicht** deterministisch.
 
 ```text
-Evaluation A:  Modell + Holdout-Task + baseline.md
-Evaluation B:  Modell + Holdout-Task + compiled.md
+Evaluation A:  Modell + Holdout-Task + baseline.md  + eigenes Temp-Workspace
+Evaluation B:  Modell + Holdout-Task + compiled.md  + eigenes Temp-Workspace
 ```
 
-Reihenfolge pro Task: erst A, dann B. Dieselbe `task_id` auf beiden Seiten.
+Reihenfolge pro Task: erst A, dann B. Dieselbe `task_id` und derselbe `input` auf beiden Seiten. Der Runner kompiliert **nicht** selbst.
 
-> Dieser Modus steckt im Feature `prompt_compiler.py experiment` (PR zum Experiment-Runner). Ohne diese Dateien schlägt der Unterbefehl fehl.
+### Drei Schichten, nicht vermischen
+
+| Schicht | Rolle |
+|---------|--------|
+| Fitness (`check_llm.py`) | Echte Agent-Bewertung (Tests, Diff, Halluzinationen) |
+| Compiler | Prompt-Bytes aus Fitness-JSON + Task. Gleiche Inputs → gleiche Bytes |
+| A/B-Experiment | Zwei fertige Prompts, gleiches Modell, gleicher Holdout, gleiche Knöpfe |
+
+Ein A/B-Delta ist **kein** Fitness-Delta. Der Compiler ist byte-deterministisch; die LLM-Antworten sind es nicht.
+
+### Live-Default ist ein Rauchtest
+
+`evaluator: "non_empty_response"`. Ein Ollama-Chat (`system=Prompt`, `user=Task-Input`) gilt als bestanden, wenn die Antwort nicht leer ist: `passed = bool(content.strip())`. Keine Tools. Das Workspace dient nur der Isolation; der Default-Evaluator ignoriert es.
+
+Das ist **kein** Code-Qualitätsmaß und **kein** Ersatz für die Fitness-Tests.
+
+- `improved` heißt nicht „Task gelöst“.
+- 5/10 gegen 7/10 nicht-leere Antworten ist **nicht** „+20 % Codequalität“.
+- `delta.passed == 2` heißt: zwei Tasks mehr mit nicht-leerer Antwort, nicht zwei Tasks mehr korrekt.
+
+Echte Coding-Qualität weiter mit `check_llm.py` messen. Ein späterer deterministischer Task-Evaluator (pytest, Diffs, Invarianten) ist nicht implementiert.
 
 ### Holdout-JSON
 
@@ -216,15 +236,14 @@ python prompt_compiler.py experiment \
 
 Hashes sind SHA-256 über die **rohen Datei-Bytes** (kein `strip()`, keine Normalisierung). Ein zusätzliches Leerzeichen ändert den Hash.
 
+Pro Task-Arm ein eigenes Temp-Verzeichnis; A und B teilen keinen Pfad. Nach dem Lauf werden die Verzeichnisse gelöscht.
+
 ### Ergebnis lesen
 
-- `results.baseline` / `results.compiled`: Summe der Task-Scores, Anzahl passed/failed
-- `results.delta.score`: compiled − baseline
-- `tasks[].comparison`: `improved` (fail→pass), `regressed` (pass→fail), `unchanged`
-
-### Live-Bewertung (wichtig)
-
-Ohne injizierten Test-Evaluator gilt der Default: ein Ollama-Chat mit `system=Prompt`, `user=Task-Input`. **Bestanden** heißt derzeit: die Assistenten-Antwort ist nicht leer (`passed = bool(content.strip())`). Das ist **kein** Ersatz für die acht Fitness-Tests. Der A/B-Lauf prüft, ob sich das Verhalten unter zwei Prompts unterscheidet; die Fitness-Note bleibt `check_llm.py`.
+- `evaluator`: immer `non_empty_response` (Live-Default)
+- `baseline` / `compiled`: Summe der Task-Scores, Anzahl passed/failed, `prompt_sha256`
+- `delta.score` / `delta.passed`: compiled − baseline (Rauchtest-Zählung, keine Qualitätsdifferenz)
+- `tasks[].comparison`: `improved` (fail→pass), `regressed` (pass→fail), `unchanged` — bezogen auf nicht-leere Antwort
 
 Gleiche Knöpfe für A und B: `temperature=0`, `num_ctx=8192`, `num_predict=4096`. Ollama hat keinen Seed; `temperature=0` friert Sampling nicht ein. Das steht in `notes` der JSON.
 
@@ -266,7 +285,7 @@ Compiler und Experiment brauchen **kein** zweites Fitness-JSON. Den Compiler nic
 - **Immer `--output` beim Kompilieren.** Sonst landet der Prompt auf stdout und vermischt sich mit `--profile`/`--explain`.
 - **Task-Datei = Produktionsauftrag.** Fitness-Fälle nicht als `--task` recyceln, sonst misst ihr denselben Stoff zweimal und der Compiler „kennt“ die Prüfung.
 - **Holdout klein und stabil halten.** Gleiche Task-IDs und -Reihenfolge, sonst sind Deltas nicht vergleichbar.
-- **Hashes prüfen**, wenn ihr unsicher seid, welche Prompt-Datei im Experiment war: `sha256sum baseline.md compiled.md` muss zu `conditions.*.prompt_sha256` passen.
+- **Hashes prüfen**, wenn ihr unsicher seid, welche Prompt-Datei im Experiment war: `sha256sum baseline.md compiled.md` muss zu `baseline.prompt_sha256` und `compiled.prompt_sha256` passen.
 - **`results/` nicht committen.** Laufzeitdaten; JSON bei Bedarf gezielt kopieren.
 - **Thinking-Modelle (Qwen3).** Tool-XML muss in `content` stehen, nicht nur in `thinking`. Der Fitness-Agent parst nur `content`.
 - **Critical Hallucination.** Ein `atomic()`-Fail zieht −15 vom Total. Der Compiler setzt dann typischerweise Halluzinationsregeln — das ist Absicht, kein Bug.
