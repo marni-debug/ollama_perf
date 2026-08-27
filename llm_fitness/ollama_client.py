@@ -11,6 +11,10 @@ from llm_fitness.results import PerfSample
 # this fixture's system prompt + file reads + tool results, without using
 # each model's maximum (32K–256K). Same value for all tags.
 NUM_CTX = 8192
+# Cap on tokens generated per /api/chat call (including thinking). Without this,
+# Ollama continues until EOS and may context-shift past num_ctx (n_gen >> 8192).
+# 4096 covers observed legitimate turns (~4k) and stops unbounded generation.
+NUM_PREDICT = 4096
 
 
 class OllamaError(Exception):
@@ -40,7 +44,11 @@ def chat_payload(
         "model": model,
         "messages": messages,
         "stream": False,
-        "options": {"temperature": temperature, "num_ctx": NUM_CTX},
+        "options": {
+            "temperature": temperature,
+            "num_ctx": NUM_CTX,
+            "num_predict": NUM_PREDICT,
+        },
     }
 
 

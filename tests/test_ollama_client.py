@@ -1,5 +1,6 @@
 from llm_fitness.ollama_client import (
     NUM_CTX,
+    NUM_PREDICT,
     chat_payload,
     chat_response_from_body,
 )
@@ -41,3 +42,9 @@ def test_chat_payload_sends_fixed_num_ctx():
     assert payload["options"]["num_ctx"] == NUM_CTX
     assert payload["options"]["temperature"] == 0.0
     assert NUM_CTX == 8192
+
+
+def test_chat_payload_sends_fixed_num_predict():
+    payload = chat_payload("qwen3:14b", [{"role": "user", "content": "OK"}])
+    assert payload["options"]["num_predict"] == NUM_PREDICT
+    assert NUM_PREDICT == 4096
