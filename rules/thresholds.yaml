@@ -1,0 +1,3 @@
+thresholds:
+  strong: 0.75
+  weak: 0.60

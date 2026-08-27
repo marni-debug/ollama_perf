@@ -1,0 +1,4 @@
+description: "Run tests and fix failures before claiming completion."
+instructions:
+  - "After changing code, run the existing tests that cover the change."
+  - "If tests fail, fix the code before declaring the task complete."

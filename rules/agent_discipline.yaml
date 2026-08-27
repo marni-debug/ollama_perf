@@ -1,0 +1,4 @@
+description: "Limit edits to what the task requires."
+instructions:
+  - "Change only the files needed to complete the task; do not refactor, restyle, or edit unrelated code."
+  - "Do not create files or directories that the task does not require."

@@ -1,0 +1,4 @@
+description: "Read existing code and keep edits consistent with it."
+instructions:
+  - "Read the relevant existing code before editing and match its types, control flow, and conventions."
+  - "Prefer the smallest change that implements the required behavior."
