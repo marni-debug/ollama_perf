@@ -30,3 +30,9 @@ python prompt_compiler.py --fitness results/gemma4-12b-20260826T224852Z.json --t
 ```
 
 The same inputs always produce the same prompt. `--profile` prints the capability profile JSON to stdout; `--explain` prints per-category score, classification, and applied rules.
+
+Compare an already-compiled prompt to a baseline on the same holdout JSON and model (no recompilation). Prompt files are hashed by exact bytes; each task is evaluated under A then B; the JSON reports per-task improved/unchanged/regressed and score delta.
+
+```bash
+python prompt_compiler.py experiment --model MODEL --benchmark holdout.json --baseline-prompt baseline.md --compiled-prompt compiled.md --output experiment.json
+```
