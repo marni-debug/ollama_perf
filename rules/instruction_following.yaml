@@ -1,0 +1,4 @@
+description: "Follow task requirements as written."
+instructions:
+  - "Treat every explicit requirement in the task as mandatory; do not skip, reinterpret, or replace it."
+  - "Do not add unrequested features or change behavior outside the stated requirements."

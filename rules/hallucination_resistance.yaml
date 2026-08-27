@@ -1,0 +1,4 @@
+description: "Avoid inventing APIs, files, or facts that are not in the project."
+instructions:
+  - "Use only APIs, types, and modules that exist in the repository or its declared dependencies."
+  - "If an API is not visible in the installed code, do not invent a substitute; read the project files instead."
