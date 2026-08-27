@@ -2,7 +2,8 @@
 
 ## Git
 
-- Never commit to `main`. `main` tracks `origin/main` only via explicit merge/PR by the user.
-- Every task gets its own branch: `feat/<short-name>`, created from current `origin/main` unless the task continues an existing feature branch.
-- Do not mix unrelated tasks on one branch.
-- Push the feature branch; do not push `main` unless the user explicitly asks to update it.
+- Never commit to `main`. Do not merge into `main` unless the user explicitly says so.
+- New task: create `feat/<short-name>` from current `origin/main` (or continue the existing feature branch for that task).
+- One task per branch. Do not mix unrelated work.
+- After the task is done: push the feature branch and open a Pull Request into `main`. The user decides whether to merge.
+- Do not push `main`.
