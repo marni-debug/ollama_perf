@@ -22,7 +22,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_experiment_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="prompt_compiler.py experiment",
+        description="Run an A/B holdout experiment with a deterministic definition (same model, two prompts)",
+    )
+    parser.add_argument("--model", required=True, help="Ollama model tag")
+    parser.add_argument("--benchmark", type=Path, required=True, help="Holdout JSON path")
+    parser.add_argument("--baseline-prompt", type=Path, required=True, help="Baseline system prompt file")
+    parser.add_argument("--compiled-prompt", type=Path, required=True, help="Compiled system prompt file")
+    parser.add_argument("--output", type=Path, required=True, help="Write experiment JSON to this path")
+    return parser
+
+
+def main(argv: list[str] | None = None, *, evaluator: object | None = None) -> int:
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    if argv_list[:1] == ["experiment"]:
+        return _experiment_main(argv_list[1:], evaluator=evaluator)
+    return _compile_main(argv_list)
+
+
+def _compile_main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.format != "markdown":
@@ -45,6 +65,34 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(json.dumps(result.profile.to_dict(), indent=2, sort_keys=True) + "\n")
     if args.explain:
         sys.stdout.write(explain_text(result))
+    return 0
+
+
+def _experiment_main(argv: list[str], *, evaluator: object | None = None) -> int:
+    from compiler.evaluate import default_evaluator
+    from compiler.experiment import ExperimentError, run_experiment
+
+    parser = build_experiment_parser()
+    args = parser.parse_args(argv)
+    if evaluator is None:
+        evaluator = default_evaluator()
+    try:
+        result = run_experiment(
+            model=args.model,
+            benchmark_path=args.benchmark,
+            baseline_prompt_path=args.baseline_prompt,
+            compiled_prompt_path=args.compiled_prompt,
+            evaluator=evaluator,
+        )
+    except ExperimentError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    try:
+        _atomic_write(args.output, payload)
+    except Exception as exc:
+        print(f"error: cannot write output file: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
