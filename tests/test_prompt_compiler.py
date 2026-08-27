@@ -332,7 +332,7 @@ def test_failure_handling_known_table(tmp_path: Path):
         rules_dir=rules_dir,
     )
     assert "SELF_CORR_RULE" in result.prompt
-    assert result.prompt.count("SELF_CORR_RULE") == 2  # operating + VERIFICATION
+    assert result.prompt.count("SELF_CORR_RULE") == 1
     assert "UNIQUE_DETAIL_TOKEN_XYZ" not in result.prompt
     assert COMPLETION_TESTS in result.prompt
 

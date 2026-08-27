@@ -27,10 +27,13 @@ HEADERS = (
 
 
 def render_prompt(profile: CapabilityProfile, task: str, selected: SelectedRules) -> str:
+    # First occurrence wins so identical instruction strings are not repeated
+    # across Operating instructions and later sections.
+    seen: set[str] = set()
     head = "\n\n".join(
         [
             f"ROLE\n\n{ROLE_LINE}",
-            f"MODEL-SPECIFIC OPERATING PROFILE\n\n{_profile_body(profile, selected)}",
+            f"MODEL-SPECIFIC OPERATING PROFILE\n\n{_profile_body(profile, selected, seen)}",
         ]
     )
     task_block = f"TASK\n\n{task}"
@@ -38,9 +41,9 @@ def render_prompt(profile: CapabilityProfile, task: str, selected: SelectedRules
         task_block += "\n"
     tail = "\n\n".join(
         [
-            f"REQUIREMENT HANDLING\n\n{_requirement_body(selected)}",
-            f"IMPLEMENTATION GUIDANCE\n\n{_implementation_body(selected)}",
-            f"VERIFICATION\n\n{_verification_body(selected)}",
+            f"REQUIREMENT HANDLING\n\n{_requirement_body(selected, seen)}",
+            f"IMPLEMENTATION GUIDANCE\n\n{_implementation_body(selected, seen)}",
+            f"VERIFICATION\n\n{_verification_body(selected, seen)}",
             f"COMPLETION CRITERIA\n\n{_completion_body(profile)}",
         ]
     )
@@ -69,9 +72,11 @@ def render_explain(profile: CapabilityProfile, selected: SelectedRules) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
-def _profile_body(profile: CapabilityProfile, selected: SelectedRules) -> str:
-    if selected.operating:
-        instructions = _numbered(selected.operating)
+def _profile_body(profile: CapabilityProfile, selected: SelectedRules, seen: set[str]) -> str:
+    # Section bodies own weakness YAML; operating only lists extras not used later.
+    unique = _take(selected.extras, seen)
+    if unique:
+        instructions = _numbered(unique)
     else:
         instructions = NO_EXTRA_INSTRUCTIONS
     return "\n".join(
@@ -90,27 +95,33 @@ def _profile_body(profile: CapabilityProfile, selected: SelectedRules) -> str:
     )
 
 
-def _requirement_body(selected: SelectedRules) -> str:
-    rules = selected.by_category.get("instruction_following", ())
+def _requirement_body(selected: SelectedRules, seen: set[str]) -> str:
+    rules = _take(selected.by_category.get("instruction_following", ()), seen)
     if rules:
         return _numbered(rules)
     return NEUTRAL_REQUIREMENTS
 
 
-def _implementation_body(selected: SelectedRules) -> str:
-    rules = _dedupe_join(
-        selected.by_category.get("agent_discipline", ()),
-        selected.by_category.get("code_reasoning", ()),
+def _implementation_body(selected: SelectedRules, seen: set[str]) -> str:
+    rules = _take(
+        _dedupe_join(
+            selected.by_category.get("agent_discipline", ()),
+            selected.by_category.get("code_reasoning", ()),
+        ),
+        seen,
     )
     if rules:
         return _numbered(rules)
     return NEUTRAL_IMPLEMENTATION
 
 
-def _verification_body(selected: SelectedRules) -> str:
-    rules = _dedupe_join(
-        selected.by_category.get("hallucination_resistance", ()),
-        selected.by_category.get("self_correction", ()),
+def _verification_body(selected: SelectedRules, seen: set[str]) -> str:
+    rules = _take(
+        _dedupe_join(
+            selected.by_category.get("hallucination_resistance", ()),
+            selected.by_category.get("self_correction", ()),
+        ),
+        seen,
     )
     if rules:
         return _numbered(rules)
@@ -143,4 +154,14 @@ def _dedupe_join(*groups: tuple[str, ...]) -> list[str]:
                 continue
             seen.add(item)
             out.append(item)
+    return out
+
+
+def _take(items: tuple[str, ...] | list[str], seen: set[str]) -> list[str]:
+    out: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
     return out
