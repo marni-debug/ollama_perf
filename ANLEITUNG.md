@@ -285,7 +285,7 @@ Compiler und Experiment brauchen **kein** zweites Fitness-JSON. Den Compiler nic
 - **Immer `--output` beim Kompilieren.** Sonst landet der Prompt auf stdout und vermischt sich mit `--profile`/`--explain`.
 - **Task-Datei = Produktionsauftrag.** Fitness-Fälle nicht als `--task` recyceln, sonst misst ihr denselben Stoff zweimal und der Compiler „kennt“ die Prüfung.
 - **Holdout klein und stabil halten.** Gleiche Task-IDs und -Reihenfolge, sonst sind Deltas nicht vergleichbar.
-- **Hashes prüfen**, wenn ihr unsicher seid, welche Prompt-Datei im Experiment war: `sha256sum baseline.md compiled.md` muss zu `conditions.*.prompt_sha256` passen.
+- **Hashes prüfen**, wenn ihr unsicher seid, welche Prompt-Datei im Experiment war: `sha256sum baseline.md compiled.md` muss zu `baseline.prompt_sha256` und `compiled.prompt_sha256` passen.
 - **`results/` nicht committen.** Laufzeitdaten; JSON bei Bedarf gezielt kopieren.
 - **Thinking-Modelle (Qwen3).** Tool-XML muss in `content` stehen, nicht nur in `thinking`. Der Fitness-Agent parst nur `content`.
 - **Critical Hallucination.** Ein `atomic()`-Fail zieht −15 vom Total. Der Compiler setzt dann typischerweise Halluzinationsregeln — das ist Absicht, kein Bug.
