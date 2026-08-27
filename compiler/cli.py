@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
 def build_experiment_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="prompt_compiler.py experiment",
-        description="Run a deterministic A/B holdout experiment (same model, two prompts)",
+        description="Run an A/B holdout experiment with a deterministic definition (same model, two prompts)",
     )
     parser.add_argument("--model", required=True, help="Ollama model tag")
     parser.add_argument("--benchmark", type=Path, required=True, help="Holdout JSON path")

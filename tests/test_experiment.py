@@ -8,6 +8,7 @@ import pytest
 from compiler.cli import main
 from compiler.evaluate import (
     DEFAULT_TEMPERATURE,
+    EVALUATOR_NAME,
     EvaluationConfig,
     NUM_CTX,
     NUM_PREDICT,
@@ -80,8 +81,10 @@ def run(
 
 
 def config_without_prompt(config: EvaluationConfig) -> dict:
+    # Isolation requires distinct workspace_root per arm; prompt is the A/B treatment.
     data = asdict(config)
     del data["prompt"]
+    del data["workspace_root"]
     return data
 
 
@@ -144,8 +147,12 @@ def test_n_tasks_pair_one_to_one_no_missing_or_dup_ids(tmp_path: Path, n: int):
     compiled_ids = [cfg.task_id for cfg in evaluator.configs[1::2]]
     assert baseline_ids == ids
     assert compiled_ids == ids
+    assert baseline_ids == compiled_ids
     assert result["baseline"]["passed"] + result["baseline"]["failed"] == n
     assert result["compiled"]["passed"] + result["compiled"]["failed"] == n
+    roots = [cfg.workspace_root.resolve() for cfg in evaluator.configs]
+    assert len(roots) == 2 * n
+    assert len(set(roots)) == 2 * n
 
 
 def test_comparison_matrix(tmp_path: Path):
@@ -231,6 +238,9 @@ def test_sha256_identical_bytes_same_one_byte_change_different(tmp_path: Path):
 
 
 def test_evaluation_config_equal_except_prompt(tmp_path: Path):
+    # A and B must match on model, task_id, task_input, temperature, num_ctx,
+    # num_predict. Allowed differences: prompt (treatment) and workspace_root
+    # (isolation requires distinct roots).
     baseline = "BASELINE PROMPT\n"
     compiled = "COMPILED PROMPT\n"
     tasks = [
@@ -254,6 +264,8 @@ def test_evaluation_config_equal_except_prompt(tmp_path: Path):
         assert a.prompt == baseline
         assert b.prompt == compiled
         assert a.prompt != b.prompt
+        assert a.workspace_root is not None and b.workspace_root is not None
+        assert a.workspace_root.resolve() != b.workspace_root.resolve()
         assert a.model == b.model == "gemma4:12b"
         assert a.task_id == b.task_id == task["id"]
         assert a.task_input == b.task_input == task["input"]
@@ -268,6 +280,57 @@ def test_evaluation_config_equal_except_prompt(tmp_path: Path):
         "num_predict": NUM_PREDICT,
         "temperature": DEFAULT_TEMPERATURE,
     }
+
+
+def test_same_task_input_for_a_and_b(tmp_path: Path):
+    tasks = [
+        {"id": "ws", "input": "  keep whitespace\nand lines\n"},
+        {"id": "plain", "input": "second"},
+    ]
+    evaluator = ConstEvaluator()
+    run(tmp_path, tasks=tasks, evaluator=evaluator)
+    assert len(evaluator.configs) == 4
+    for index, task in enumerate(tasks):
+        a = evaluator.configs[2 * index]
+        b = evaluator.configs[2 * index + 1]
+        assert a.task_input == b.task_input == task["input"]
+        assert a.task_input.encode("utf-8") == b.task_input.encode("utf-8") == task["input"].encode("utf-8")
+
+
+def test_workspace_isolation_marker_file(tmp_path: Path):
+    class MarkerEvaluator:
+        def __init__(self) -> None:
+            self.configs: list[EvaluationConfig] = []
+            self.written: list[tuple[Path, str]] = []
+
+        def evaluate(self, config: EvaluationConfig) -> TaskOutcome:
+            assert config.workspace_root is not None
+            unique = f"{config.task_id}\n{config.prompt}"
+            marker = config.workspace_root / "marker.txt"
+            marker.write_text(unique, encoding="utf-8")
+            for other_root, other_unique in self.written:
+                other_marker = other_root / "marker.txt"
+                assert other_marker.is_file()
+                assert other_marker.read_text(encoding="utf-8") == other_unique
+                assert other_marker.read_text(encoding="utf-8") != unique
+                assert not marker.samefile(other_marker)
+                assert config.workspace_root.resolve() != other_root.resolve()
+            self.written.append((config.workspace_root, unique))
+            self.configs.append(config)
+            return TaskOutcome(task_id=config.task_id, passed=True, score=1.0)
+
+    evaluator = MarkerEvaluator()
+    run(
+        tmp_path,
+        baseline="BASE-ARM\n",
+        compiled="COMP-ARM\n",
+        tasks=make_tasks("t1", "t2"),
+        evaluator=evaluator,
+    )
+    assert len(evaluator.written) == 4
+    assert len({root.resolve() for root, _ in evaluator.written}) == 4
+    for root, _ in evaluator.written:
+        assert not root.exists()
 
 
 def test_identical_prompts_unchanged_zero_delta(tmp_path: Path):
@@ -390,6 +453,12 @@ def test_result_has_no_datetime_or_hostname(tmp_path: Path):
     assert result["model"] == "test-model"
     assert result["benchmark"] == "holdout"
     assert any("seed" in note.lower() for note in result["notes"])
+
+
+def test_result_json_identifies_evaluator(tmp_path: Path):
+    result, _, _, _ = run(tmp_path, tasks=make_tasks("t1"), evaluator=ConstEvaluator())
+    assert result["evaluator"] == EVALUATOR_NAME
+    assert result["evaluator"] == "non_empty_response"
 
 
 def test_cli_experiment_writes_sorted_json(tmp_path: Path, capsys):
@@ -561,3 +630,21 @@ def test_ollama_chat_evaluator_blank_content_fails():
     )
     assert outcome.passed is False
     assert outcome.score == 0.0
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_passed"),
+    [
+        ("hello", True),
+        ("", False),
+        ("   ", False),
+    ],
+)
+def test_ollama_chat_evaluator_non_empty_response(content: str, expected_passed: bool):
+    stub = _StubChat(content)
+    evaluator = OllamaChatEvaluator(client=stub)
+    outcome = evaluator.evaluate(
+        EvaluationConfig(model="m", prompt="SYS", task_id="t1", task_input="x")
+    )
+    assert outcome.passed is expected_passed
+    assert outcome.score == (1.0 if expected_passed else 0.0)

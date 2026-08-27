@@ -1,17 +1,19 @@
 """Evaluator protocol and A/B evaluation config.
 
 Import-only use of llm_fitness.ollama_client constants. Holdout grading is
-injected; the live chat helper only checks non-empty content.
+injected; the live chat helper only checks non-empty content. No tools.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from llm_fitness.ollama_client import NUM_CTX, NUM_PREDICT
 
 DEFAULT_TEMPERATURE = 0.0
+EVALUATOR_NAME = "non_empty_response"
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class EvaluationConfig:
     temperature: float = DEFAULT_TEMPERATURE
     num_ctx: int = NUM_CTX
     num_predict: int = NUM_PREDICT
+    workspace_root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,12 @@ class Evaluator(Protocol):
 
 
 class OllamaChatEvaluator:
-    """Default live path: one chat call, passed=bool(content.strip())."""
+    """Default live path: one chat call, no tools.
+
+    Scores passed=bool(content.strip()). Ignores workspace_root.
+    """
+
+    name = EVALUATOR_NAME
 
     def __init__(self, client: object | None = None) -> None:
         if client is None:

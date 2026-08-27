@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from compiler.evaluate import (
     DEFAULT_TEMPERATURE,
+    EVALUATOR_NAME,
     EvaluationConfig,
     Evaluator,
     NUM_CTX,
@@ -24,7 +27,8 @@ RESULT_VERSION = 1
 
 NOTES = (
     "Ollama chat has no seed; temperature=0 does not freeze sampling.",
-    "Live evaluator scores passed=bool(content.strip()); holdout grading is the injected evaluator backend.",
+    "Live evaluator is non_empty_response: passed=bool(content.strip()); not a coding-quality grader.",
+    "Default evaluator is chat-only (no tools); workspace_root isolates arms only.",
 )
 
 
@@ -130,6 +134,10 @@ def _knobs() -> dict[str, float | int]:
     }
 
 
+def _arm_workspace(parent: Path, arm: str) -> Path:
+    return Path(tempfile.mkdtemp(prefix=f"{arm}-", dir=parent))
+
+
 def run_experiment(
     *,
     model: str,
@@ -145,47 +153,53 @@ def run_experiment(
     baseline_outcomes: list[TaskOutcome] = []
     compiled_outcomes: list[TaskOutcome] = []
     tasks_out: list[dict[str, Any]] = []
-    for task in holdout.tasks:
-        baseline_config = EvaluationConfig(
-            model=model,
-            prompt=baseline_prompt,
-            task_id=task.id,
-            task_input=task.input,
-        )
-        compiled_config = EvaluationConfig(
-            model=model,
-            prompt=compiled_prompt,
-            task_id=task.id,
-            task_input=task.input,
-        )
-        baseline_raw = evaluator.evaluate(baseline_config)
-        compiled_raw = evaluator.evaluate(compiled_config)
-        baseline_outcome = TaskOutcome(
-            task_id=task.id,
-            passed=baseline_raw.passed,
-            score=float(baseline_raw.score),
-        )
-        compiled_outcome = TaskOutcome(
-            task_id=task.id,
-            passed=compiled_raw.passed,
-            score=float(compiled_raw.score),
-        )
-        baseline_outcomes.append(baseline_outcome)
-        compiled_outcomes.append(compiled_outcome)
-        tasks_out.append(
-            {
-                "baseline": {
-                    "passed": baseline_outcome.passed,
-                    "score": float(baseline_outcome.score),
-                },
-                "comparison": compare_passed(baseline_outcome.passed, compiled_outcome.passed),
-                "compiled": {
-                    "passed": compiled_outcome.passed,
-                    "score": float(compiled_outcome.score),
-                },
-                "task_id": task.id,
-            }
-        )
+    parent = Path(tempfile.mkdtemp(prefix="pc-ab-"))
+    try:
+        for task in holdout.tasks:
+            baseline_config = EvaluationConfig(
+                model=model,
+                prompt=baseline_prompt,
+                task_id=task.id,
+                task_input=task.input,
+                workspace_root=_arm_workspace(parent, "a"),
+            )
+            compiled_config = EvaluationConfig(
+                model=model,
+                prompt=compiled_prompt,
+                task_id=task.id,
+                task_input=task.input,
+                workspace_root=_arm_workspace(parent, "b"),
+            )
+            baseline_raw = evaluator.evaluate(baseline_config)
+            compiled_raw = evaluator.evaluate(compiled_config)
+            baseline_outcome = TaskOutcome(
+                task_id=task.id,
+                passed=baseline_raw.passed,
+                score=float(baseline_raw.score),
+            )
+            compiled_outcome = TaskOutcome(
+                task_id=task.id,
+                passed=compiled_raw.passed,
+                score=float(compiled_raw.score),
+            )
+            baseline_outcomes.append(baseline_outcome)
+            compiled_outcomes.append(compiled_outcome)
+            tasks_out.append(
+                {
+                    "baseline": {
+                        "passed": baseline_outcome.passed,
+                        "score": float(baseline_outcome.score),
+                    },
+                    "comparison": compare_passed(baseline_outcome.passed, compiled_outcome.passed),
+                    "compiled": {
+                        "passed": compiled_outcome.passed,
+                        "score": float(compiled_outcome.score),
+                    },
+                    "task_id": task.id,
+                }
+            )
+    finally:
+        shutil.rmtree(parent, ignore_errors=True)
 
     baseline_stats = _arm_stats(baseline_outcomes)
     compiled_stats = _arm_stats(compiled_outcomes)
@@ -199,6 +213,7 @@ def run_experiment(
             "passed": compiled_stats["passed"] - baseline_stats["passed"],
             "score": compiled_stats["score"] - baseline_stats["score"],
         },
+        "evaluator": EVALUATOR_NAME,
         "knobs": _knobs(),
         "model": model,
         "notes": list(NOTES),

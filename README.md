@@ -31,7 +31,21 @@ python prompt_compiler.py --fitness results/gemma4-12b-20260826T224852Z.json --t
 
 The same inputs always produce the same prompt. `--profile` prints the capability profile JSON to stdout; `--explain` prints per-category score, classification, and applied rules.
 
-Compare an already-compiled prompt to a baseline on the same holdout JSON and model (no recompilation). Prompt files are hashed by exact bytes; each task is evaluated under A then B; the JSON reports per-task improved/unchanged/regressed and score delta.
+## A/B holdout experiment
+
+Three separate layers — do not treat their numbers as the same measurement:
+
+| Layer | Role |
+|-------|------|
+| **Fitness** (`check_llm.py`) | Real agent scoring (workspace tests, diffs, graders). |
+| **Compiler** | Deterministic prompt bytes from fitness JSON + task. No LLM. |
+| **A/B experiment** | Same model and holdout, two already-built prompt files, controlled knobs. |
+
+The compiler is byte-deterministic. An LLM run is not. The experiment *definition* is deterministic (file hashes, task pairing, knobs); sampling is not.
+
+Live A/B default is a smoke check (`evaluator: "non_empty_response"`): `passed` if the chat response is non-empty. No tools. `improved` does not mean the task was solved. An A/B delta is not a Fitness delta.
+
+Each task arm gets its own temp workspace (A and B never share a path). The default chat evaluator ignores it. Future work (not implemented): a deterministic task evaluator (pytest, diffs, invariants).
 
 ```bash
 python prompt_compiler.py experiment --model MODEL --benchmark holdout.json --baseline-prompt baseline.md --compiled-prompt compiled.md --output experiment.json
